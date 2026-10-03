@@ -217,10 +217,11 @@ go test -v ./internal/bot/...
    sudo apt update && sudo apt install -y git golang-go
    ```
 
-2. **Clone repo & build binary:**
+2. **Clone repo, unduh dependencies & build binary:**
    ```bash
    git clone https://github.com/iqbalmusyaffa/bot-monitoring-server.git
    cd bot-monitoring-server
+   go mod tidy
    go build -ldflags="-s -w" -o host-monitor cmd/bot/main.go
    ```
 
