@@ -1,0 +1,31 @@
+[Unit]
+Description=Host Monitoring Telegram Bot
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hostmonitor
+Group=hostmonitor
+WorkingDirectory=/opt/host-monitor
+ExecStart=/opt/host-monitor/host-monitor
+Restart=always
+RestartSec=5
+
+# Security Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/host-monitor/data
+
+# Resource Limits (Optimized for 1 vCPU / 1 GB RAM VPS)
+LimitNOFILE=65535
+MemoryMax=256M
+CPUQuota=80%
+
+# Environment
+EnvironmentFile=/opt/host-monitor/.env
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+# Environment variables and secrets
+.env
+*.env
+
+# SQLite Database files
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+
+# Log files
+*.log
+logs/
+
+# Compiled Binaries
+host-monitor
+host-monitor.exe
+bin/
+dist/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
