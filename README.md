@@ -96,10 +96,11 @@ Bot Telegram mandiri untuk memantau status ketersediaan (*availability*), *laten
 ---
 
 ## 📦 6. Installation
-Pastikan Golang stable (1.22+) telah terpasang:
+
+Clone repository dari GitHub:
 ```bash
-git clone https://github.com/your-username/host-monitor.git
-cd host-monitor
+git clone https://github.com/iqbalmusyaffa/bot-monitoring-server.git
+cd bot-monitoring-server
 go mod download
 ```
 
@@ -195,7 +196,7 @@ go test -v ./internal/bot/...
 
 ---
 
-## 🐧 12. Ubuntu & Linux Deployment (1 vCPU, 1 GB RAM)
+## 🐧 12. Panduan Lengkap Deployment di VPS Ubuntu (1 vCPU, 1 GB RAM)
 
 ### 📋 Supported Operating Systems:
 | OS / Distro | Versi | Status |
@@ -207,23 +208,81 @@ go test -v ./internal/bot/...
 
 *(Karena menggunakan pure Go tanpa CGO/glibc lock-in, binary statis dapat berjalan di Linux kernel apa pun tanpa dependensi library eksternal).*
 
-### A. Buat User Khusus (*Non-Root*)
-```bash
-sudo useradd -r -s /bin/false hostmonitor
-```
+---
 
-### B. Siapkan Direktori Deployment
-```bash
-sudo mkdir -p /opt/host-monitor/data
-sudo cp host-monitor /opt/host-monitor/
-sudo cp .env.example /opt/host-monitor/.env
-sudo nano /opt/host-monitor/.env
+### 🚀 Cara 1: Install & Build Langsung di VPS Ubuntu (Recommended)
 
-sudo chown -R hostmonitor:hostmonitor /opt/host-monitor
-sudo chmod 700 /opt/host-monitor/data
-sudo chmod 600 /opt/host-monitor/.env
-sudo chmod 755 /opt/host-monitor/host-monitor
-```
+1. **Update package & install Git + Go (di VPS):**
+   ```bash
+   sudo apt update && sudo apt install -y git golang-go
+   ```
+
+2. **Clone repo & build binary:**
+   ```bash
+   git clone https://github.com/iqbalmusyaffa/bot-monitoring-server.git
+   cd bot-monitoring-server
+   go build -ldflags="-s -w" -o host-monitor cmd/bot/main.go
+   ```
+
+3. **Buat user khusus (*non-root*):**
+   ```bash
+   sudo useradd -r -s /bin/false hostmonitor
+   ```
+
+4. **Siapkan direktori aplikasi `/opt/host-monitor`:**
+   ```bash
+   sudo mkdir -p /opt/host-monitor/data
+   sudo cp host-monitor /opt/host-monitor/
+   sudo cp .env.example /opt/host-monitor/.env
+   sudo chown -R hostmonitor:hostmonitor /opt/host-monitor
+   sudo chmod 700 /opt/host-monitor/data
+   sudo chmod 600 /opt/host-monitor/.env
+   sudo chmod 755 /opt/host-monitor/host-monitor
+   ```
+
+5. **Isi Token Telegram di file `.env`:**
+   ```bash
+   sudo nano /opt/host-monitor/.env
+   ```
+   *(Cukup isi `TELEGRAM_BOT_TOKEN=...`, lalu simpan dengan `Ctrl+O`, `Enter`, `Ctrl+X`)*.
+
+6. **Pasang & jalankan Systemd Service:**
+   ```bash
+   sudo cp systemd/host-monitor.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now host-monitor
+   ```
+
+7. **Cek status & log:**
+   ```bash
+   sudo systemctl status host-monitor
+   sudo journalctl -u host-monitor -f
+   ```
+
+8. **Klaim Owner:** Buka bot Anda di Telegram dan ketik `/start`. Anda otomatis menjadi Owner! 🎉
+
+---
+
+### 💻 Cara 2: Cross-Compile dari Komputer Lokal (Windows / macOS)
+
+Jika Anda tidak ingin menginstall Go di VPS:
+
+1. **Build binary Linux di komputer lokal:**
+   - **Windows (PowerShell):**
+     ```powershell
+     $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"; go build -ldflags="-s -w" -o host-monitor ./cmd/bot/main.go
+     ```
+   - **macOS / Linux:**
+     ```bash
+     GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o host-monitor ./cmd/bot/main.go
+     ```
+
+2. **Upload binary & config ke VPS via SCP:**
+   ```bash
+   scp host-monitor .env.example systemd/host-monitor.service user@IP_VPS:~
+   ```
+
+3. **Login ke VPS dan ikuti langkah pembuatan user & direktori seperti pada Cara 1.**
 
 ---
 
