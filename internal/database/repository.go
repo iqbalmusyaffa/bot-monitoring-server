@@ -465,5 +465,5 @@ func isUniqueConstraintErr(err error) bool {
 		return false
 	}
 	errStr := err.Error()
-	return contains(errStr, "UNIQUE") || contains(errStr, "constraint failed")
+	return strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "constraint failed")
 }
