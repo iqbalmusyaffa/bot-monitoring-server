@@ -56,6 +56,13 @@ func (b *Bot) StartLongPolling(ctx context.Context) error {
 	}
 	slog.Info("Telegram bot connected successfully", "bot_username", me.Username, "bot_id", me.ID)
 
+	// Automatically register Telegram Menu commands
+	if err := b.client.SetMyCommands(ctx, DefaultBotCommands()); err != nil {
+		slog.Warn("Failed to register bot commands with Telegram", "error", err)
+	} else {
+		slog.Info("Telegram menu commands registered successfully")
+	}
+
 	var offset int64 = 0
 	pollTimeout := 25
 
@@ -89,7 +96,28 @@ func (b *Bot) StartLongPolling(ctx context.Context) error {
 			if update.Message != nil {
 				b.handleMessage(ctx, update.Message)
 			}
+			if update.CallbackQuery != nil {
+				b.handleCallbackQuery(ctx, update.CallbackQuery)
+			}
 		}
+	}
+}
+
+// handleCallbackQuery processes button clicks from inline keyboards.
+func (b *Bot) handleCallbackQuery(ctx context.Context, cb *CallbackQuery) {
+	if cb == nil {
+		return
+	}
+	_ = b.client.AnswerCallbackQuery(ctx, cb.ID, "")
+	if cb.Message != nil && cb.Data != "" {
+		syntheticMsg := &Message{
+			MessageID: cb.Message.MessageID,
+			From:      &cb.From,
+			Chat:      cb.Message.Chat,
+			Text:      cb.Data,
+			Date:      time.Now().Unix(),
+		}
+		b.handleMessage(ctx, syntheticMsg)
 	}
 }
 
@@ -142,9 +170,9 @@ User ID Anda (%d) telah disimpan ke database dan memiliki akses penuh.`, senderI
 	// Command routing with role validation
 	switch cmd {
 	case "/start":
-		_ = b.client.SendMessage(ctx, msg.Chat.ID, StartMessage())
+		_ = b.client.SendMessageWithMarkup(ctx, msg.Chat.ID, StartMessage(), DefaultReplyKeyboard(role))
 	case "/help":
-		_ = b.client.SendMessage(ctx, msg.Chat.ID, HelpMessage())
+		_ = b.client.SendMessageWithMarkup(ctx, msg.Chat.ID, HelpMessage(), DefaultReplyKeyboard(role))
 	case "/check":
 		b.handleCheck(ctx, msg.Chat.ID, arg)
 	case "/list":

@@ -13,17 +13,61 @@ import (
 func StartMessage() string {
 	return `🖥️ HOST MONITOR BOT
 
-Monitor domain dan public IP dari Telegram.
+Monitor domain dan public IP langsung dari Telegram.
 
-Commands:
+Gunakan tombol menu di bawah atau ketik perintah:`
+}
 
-/check <host>     Cek host sekarang
-/add <host>       Tambahkan monitoring
-/remove <host>    Hapus monitoring
-/list             Daftar host
-/status <host>    Status terakhir
-/listusers        Daftar user & role
-/help             Bantuan`
+// DefaultBotCommands returns list of commands for Telegram Menu button.
+func DefaultBotCommands() []BotCommand {
+	return []BotCommand{
+		{Command: "start", Description: "Mulai & Tampilkan Menu"},
+		{Command: "list", Description: "Daftar Host yang Dimonitor"},
+		{Command: "check", Description: "Cek Host: /check <domain/ip>"},
+		{Command: "status", Description: "Status Host: /status <host>"},
+		{Command: "add", Description: "Tambah Host: /add <host>"},
+		{Command: "remove", Description: "Hapus Host: /remove <host>"},
+		{Command: "monitor", Description: "Aktifkan Monitor: /monitor <host>"},
+		{Command: "unmonitor", Description: "Jeda Monitor: /unmonitor <host>"},
+		{Command: "listusers", Description: "Daftar User & Role (Owner)"},
+		{Command: "adduser", Description: "Tambah User: /adduser <id> [role]"},
+		{Command: "removeuser", Description: "Hapus User: /removeuser <id>"},
+		{Command: "help", Description: "Panduan & Bantuan Lengkap"},
+	}
+}
+
+// DefaultReplyKeyboard creates interactive button layout at bottom of chat.
+func DefaultReplyKeyboard(role database.UserRole) *ReplyKeyboardMarkup {
+	var rows [][]KeyboardButton
+
+	rows = append(rows, []KeyboardButton{
+		{Text: "📋 Daftar Host"},
+		{Text: "⚡ Cek Cepat"},
+	})
+
+	if role == database.RoleOwner || role == database.RoleAdmin {
+		rows = append(rows, []KeyboardButton{
+			{Text: "➕ Tambah Host"},
+			{Text: "📊 Status Host"},
+		})
+	}
+
+	if role == database.RoleOwner {
+		rows = append(rows, []KeyboardButton{
+			{Text: "👥 Kelola User"},
+			{Text: "❓ Panduan"},
+		})
+	} else {
+		rows = append(rows, []KeyboardButton{
+			{Text: "❓ Panduan"},
+		})
+	}
+
+	return &ReplyKeyboardMarkup{
+		Keyboard:       rows,
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
 }
 
 // HelpMessage returns the help guide text for /help.
@@ -181,6 +225,26 @@ func FormatUserList(users []database.AdminUser, envUserIDs map[int64]bool) strin
 // ParseCommand splits an incoming message text into command and arguments.
 func ParseCommand(text string) (cmd string, arg string) {
 	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", ""
+	}
+
+	// Map interactive button clicks to corresponding commands
+	switch text {
+	case "📋 Daftar Host", "📋 List Host":
+		return "/list", ""
+	case "⚡ Cek Cepat", "⚡ Cek Host":
+		return "/check", ""
+	case "➕ Tambah Host":
+		return "/add", ""
+	case "📊 Status Host":
+		return "/status", ""
+	case "👥 Kelola User", "👥 List Users":
+		return "/listusers", ""
+	case "❓ Panduan", "❓ Bantuan":
+		return "/help", ""
+	}
+
 	if !strings.HasPrefix(text, "/") {
 		return "", ""
 	}
