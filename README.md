@@ -11,10 +11,12 @@ Bot Telegram mandiri untuk memantau status ketersediaan (*availability*), *laten
 
 ## 🚀 2. Features
 * **Zero Bloat & Lightweight**: 100% menggunakan Go Standard Library & SQLite (CGO-free). Memori runtime < 25 MB RAM.
-* **Smart Target Detection**: Otomatis mendeteksi tipe target (`DOMAIN`, `IPV4`, `IPV6`).
+* **Smart Target Detection**: Otomatis mendeteksi tipe target (`DOMAIN`, `IPV4`, `IPV6`) baik dengan port standar maupun **Custom Port**.
+* **Custom Port Monitoring per Target**: Mendukung monitoring port khusus seperti database (`:3306`, `:5432`), web API (`:8080`, `:8443`), Redis (`:6379`), dsb.
+* **Interactive Menu & Telegram Buttons**: Dilengkapi tombol **[ Menu ]** bawaan Telegram (`setMyCommands`) dan tombol klik instan (*Reply Keyboard*) tanpa perlu mengetik manual.
 * **Multi-Protocol Probing**:
-  - **Domain**: DNS resolution (A & AAAA records), HTTP (Port 80), HTTPS (Port 443 dengan validasi sertifikat TLS), Latency.
-  - **IP (v4 & v6)**: TCP Probe port (*non-root* ICMP fallback & RST packet reachability), TCP Port checks (default 22, 80, 443).
+  - **Domain**: DNS resolution (A & AAAA records), HTTP (Port 80/Custom), HTTPS (Port 443/Custom dengan validasi TLS), TCP Port, Latency.
+  - **IP (v4 & v6)**: TCP Probe port (*non-root* ICMP fallback & reachability), TCP Port checks (default 22, 80, 443 atau custom port target).
 * **Robust Security & SSRF Protection**: Menolak seluruh rentang IP privat/internal, loopback, link-local metadata cloud (`169.254.169.254`), dan proteksi *DNS rebinding*.
 * **Status-Change Alerting (No Spam)**: Hanya mengirim notifikasi saat status berubah (`ONLINE -> DOWN` atau `DOWN -> ONLINE`).
 * **Resource Boundary Guard**: Batas goroutine concurrent, timeout ketat per koneksi jaringan, pembatasan body response, dan batasan redirect.
@@ -24,11 +26,11 @@ Bot Telegram mandiri untuk memantau status ketersediaan (*availability*), *laten
 ---
 
 ## 🎯 3. Supported Target
-| Tipe | Contoh Input | Pemeriksaan |
-| :--- | :--- | :--- |
-| **Domain** | `example.com`, `google.com`, `api.domain.id` | DNS Resolution, HTTP, HTTPS (TLS Check), Latency |
-| **IPv4** | `123.123.123.123`, `1.1.1.1` | Connectivity Probe, TCP Port (22, 80, 443), Latency |
-| **IPv6** | `2001:db8::1`, `2606:4700:4700::1111` | Connectivity Probe, TCP Port (22, 80, 443), Latency |
+| Tipe | Contoh Input Standar | Contoh Input Custom Port | Pemeriksaan |
+| :--- | :--- | :--- | :--- |
+| **Domain** | `example.com`, `google.com` | `example.com:8080`, `api.mysite.com:8443` | DNS Resolution, HTTP/HTTPS Custom Port, TCP Port, Latency |
+| **IPv4** | `123.123.123.123`, `1.1.1.1` | `103.12.34.56:3306` (MySQL), `1.2.3.4:5432` | TCP Custom Port Probe, Reachability, Latency |
+| **IPv6** | `2001:db8::1` | `[2001:db8::1]:8443` | TCP Custom Port Probe, Reachability, Latency |
 
 *(Alamat IP private/internal seperti `127.0.0.1`, `10.x.x.x`, `192.168.x.x`, `::1` akan ditolak demi keamanan)*.
 

@@ -21,11 +21,11 @@ Private/internal address tidak dapat dimonitor.`
 	RejectInvalidHostMessage = `❌ Format target tidak valid.
 
 Gunakan format:
-* Domain: example.com
-* IPv4: 123.123.123.123
-* IPv6: 2001:db8::1
+* Domain: example.com atau example.com:8080
+* IPv4: 123.123.123.123 atau 123.123.123.123:3306
+* IPv6: 2001:db8::1 atau [2001:db8::1]:8443
 
-(Jangan menyertakan http://, https://, path, atau port)`
+(Jangan menyertakan http://, https://, atau path URL)`
 )
 
 // ValidatedHost contains the sanitized host and its detected type.

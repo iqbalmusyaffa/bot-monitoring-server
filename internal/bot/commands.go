@@ -75,9 +75,9 @@ func HelpMessage() string {
 	return `📖 PANDUAN PENGGUNAAN
 
 Target yang didukung:
-1. Domain (contoh: example.com, google.com)
-2. Public IPv4 (contoh: 123.123.123.123)
-3. Public IPv6 (contoh: 2001:db8::1)
+1. Domain: example.com atau example.com:8080
+2. Public IPv4: 123.123.123.123 atau 123.123.123.123:3306
+3. Public IPv6: 2001:db8::1 atau [2001:db8::1]:8443
 
 Perintah Umum (Semua Role):
 /start            Menampilkan menu utama

@@ -124,8 +124,13 @@ func (c *Checker) CheckHost(ctx context.Context, host string, hType HostType) *C
 
 // checkDomain runs DNS, HTTP, and HTTPS checks.
 func (c *Checker) checkDomain(ctx context.Context, host string, res *CheckResult) {
+	baseHost, customPort, hasPort, _ := SplitHostPort(host)
+	if baseHost == "" {
+		baseHost = host
+	}
+
 	// 1. DNS Check via modular DNSChecker
-	dnsRes, err := c.dnsChecker.Resolve(ctx, host)
+	dnsRes, err := c.dnsChecker.Resolve(ctx, baseHost)
 	if dnsRes != nil {
 		res.DNS = *dnsRes
 	}
@@ -135,25 +140,57 @@ func (c *Checker) checkDomain(ctx context.Context, host string, res *CheckResult
 		return
 	}
 
-	// 2. Perform HTTP Check (Port 80)
-	res.HTTP = c.httpChecker.Check(ctx, "http://"+host)
+	if hasPort {
+		// Target has custom port (e.g. example.com:8080)
+		httpURL := fmt.Sprintf("http://%s:%d", baseHost, customPort)
+		httpsURL := fmt.Sprintf("https://%s:%d", baseHost, customPort)
 
-	// 3. Perform HTTPS Check (Port 443)
-	res.HTTPS = c.httpChecker.Check(ctx, "https://"+host)
+		res.HTTP = c.httpChecker.Check(ctx, httpURL)
+		res.HTTPS = c.httpChecker.Check(ctx, httpsURL)
 
-	// 4. Classify Domain Status
+		// Check TCP port directly as well
+		tcpRes := c.tcpChecker.CheckPorts(ctx, baseHost, []int{customPort}, HostDomain)
+		res.TCPPorts = tcpRes
+
+		var portOpen bool
+		for _, p := range tcpRes {
+			if p.Open {
+				portOpen = true
+			}
+		}
+
+		res.Status = classifyDomainStatus(res.HTTP, res.HTTPS)
+		if res.Status == StatusDown && portOpen {
+			res.Status = StatusOnline
+		}
+		return
+	}
+
+	// Standard Domain (Port 80 & 443)
+	res.HTTP = c.httpChecker.Check(ctx, "http://"+baseHost)
+	res.HTTPS = c.httpChecker.Check(ctx, "https://"+baseHost)
 	res.Status = classifyDomainStatus(res.HTTP, res.HTTPS)
 }
 
 // checkIP runs Ping/connectivity and TCP port checks.
 func (c *Checker) checkIP(ctx context.Context, host string, hType HostType, res *CheckResult) {
-	ports := []int{22, 80, 443}
-	if c.cfg != nil && len(c.cfg.MonitorPorts) > 0 {
-		ports = c.cfg.MonitorPorts
+	baseHost, customPort, hasPort, _ := SplitHostPort(host)
+	if baseHost == "" {
+		baseHost = host
+	}
+
+	var ports []int
+	if hasPort {
+		ports = []int{customPort}
+	} else {
+		ports = []int{22, 80, 443}
+		if c.cfg != nil && len(c.cfg.MonitorPorts) > 0 {
+			ports = c.cfg.MonitorPorts
+		}
 	}
 
 	// 1. Check TCP ports via modular TCPChecker
-	res.TCPPorts = c.tcpChecker.CheckPorts(ctx, host, ports, hType)
+	res.TCPPorts = c.tcpChecker.CheckPorts(ctx, baseHost, ports, hType)
 
 	var anyPortOpen bool
 	for _, portRes := range res.TCPPorts {
@@ -163,10 +200,10 @@ func (c *Checker) checkIP(ctx context.Context, host string, hType HostType, res 
 	}
 
 	// 2. Ping / Connectivity check via modular PingChecker
-	res.Ping = c.pingChecker.Ping(ctx, host, hType)
+	res.Ping = c.pingChecker.Ping(ctx, baseHost, hType)
 
 	// 3. Classify IP Status (Section 10: ping reachable OR any port open = online)
-	if res.Ping.Reachable || anyPortOpen {
+	if anyPortOpen || res.Ping.Reachable {
 		res.Status = StatusOnline
 	} else {
 		res.Status = StatusUnreachable
@@ -206,6 +243,18 @@ func FormatCheckResult(res *CheckResult) string {
 			sb.WriteString(fmt.Sprintf("HTTPS     %d ms\n", res.HTTPS.Latency.Milliseconds()))
 		}
 		sb.WriteString("\n")
+
+		if len(res.TCPPorts) > 0 {
+			sb.WriteString("TCP\n\n")
+			for _, portRes := range res.TCPPorts {
+				if portRes.Open {
+					sb.WriteString(fmt.Sprintf("%-5d 🟢 OPEN\n", portRes.Port))
+				} else {
+					sb.WriteString(fmt.Sprintf("%-5d 🔴 CLOSED\n", portRes.Port))
+				}
+			}
+			sb.WriteString("\n")
+		}
 
 	} else {
 		// IP Section (Ping & TCP)

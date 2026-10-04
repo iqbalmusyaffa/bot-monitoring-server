@@ -90,11 +90,19 @@ func ValidateTargetSecurity(ctx context.Context, target string, hType monitor.Ho
 		resolver = net.DefaultResolver
 	}
 
+	baseHost, _, _, err := monitor.SplitHostPort(target)
+	if err != nil {
+		return fmt.Errorf("invalid target format: %w", err)
+	}
+	if baseHost == "" {
+		baseHost = target
+	}
+
 	switch hType {
 	case monitor.HostIPv4, monitor.HostIPv6:
-		ip := net.ParseIP(target)
+		ip := net.ParseIP(baseHost)
 		if ip == nil {
-			return fmt.Errorf("invalid IP target: %s", target)
+			return fmt.Errorf("invalid IP target: %s", baseHost)
 		}
 		if IsPrivateOrReservedIP(ip) {
 			return ErrPrivateTarget
@@ -105,9 +113,9 @@ func ValidateTargetSecurity(ctx context.Context, target string, hType monitor.Ho
 		resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		ips, err := resolver.LookupIPAddr(resolveCtx, target)
+		ips, err := resolver.LookupIPAddr(resolveCtx, baseHost)
 		if err != nil {
-			return fmt.Errorf("DNS resolution failed for %s: %w", target, err)
+			return fmt.Errorf("DNS resolution failed for %s: %w", baseHost, err)
 		}
 		if len(ips) == 0 {
 			return ErrNoIPResolved
