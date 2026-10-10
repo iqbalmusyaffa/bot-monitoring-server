@@ -437,17 +437,71 @@ func FormatWhoisReport(rec *monitor.WhoisRecord) string {
 		return fmt.Sprintf("🌐 INFORMASI DOMAIN & WHOIS\nTarget: %s\n\n🟢 STATUS: TERSEDIA (BELUM DIDAFTARKAN)\nDomain ini belum diregistrasikan dan dapat didaftarkan melalui registrar pilihan Anda.", rec.Domain)
 	}
 
+	wibLoc := time.FixedZone("WIB", 7*3600)
 	var sb strings.Builder
-	sb.WriteString("🌐 INFORMASI DOMAIN & WHOIS\n")
-	sb.WriteString(fmt.Sprintf("Target: %s\n\n", rec.Domain))
+
+	// 1. Tampilan Khusus: DOMAIN TELAH KEDALUWARSA (EXPIRED)
+	if rec.IsExpired {
+		daysAgo := -rec.DaysRemaining
+		if daysAgo <= 0 {
+			daysAgo = 1
+		}
+
+		sb.WriteString("🚨 STATUS: DOMAIN SUDAH KEDALUWARSA (EXPIRED) 🚨\n")
+		sb.WriteString(fmt.Sprintf("Target: %s\n\n", rec.Domain))
+
+		sb.WriteString("🔴 Kondisi         : ❌ MATI / KEDALUWARSA\n")
+		if rec.ExpiryDate != nil {
+			sb.WriteString(fmt.Sprintf("⏳ Tanggal Expired : %s\n", rec.ExpiryDate.In(wibLoc).Format("02 Jan 2006 15:04 WIB")))
+		}
+		sb.WriteString(fmt.Sprintf("⏱️ Telah Lewat     : %d hari yang lalu\n", daysAgo))
+
+		if rec.Registrar != "" {
+			sb.WriteString(fmt.Sprintf("🏢 Registrar       : %s\n", rec.Registrar))
+		}
+		if rec.CreatedDate != nil {
+			sb.WriteString(fmt.Sprintf("📅 Awal Terdaftar  : %s\n", rec.CreatedDate.In(wibLoc).Format("02 Jan 2006")))
+		}
+		if len(rec.DomainStatus) > 0 {
+			sb.WriteString(fmt.Sprintf("🔒 Status EPP      : %s\n", strings.Join(rec.DomainStatus, ", ")))
+		}
+
+		if len(rec.NameServers) > 0 {
+			sb.WriteString("\n🌐 Name Servers:\n")
+			for _, ns := range rec.NameServers {
+				sb.WriteString(fmt.Sprintf("   • %s\n", ns))
+			}
+		}
+
+		if rec.WhoisServer != "" {
+			sb.WriteString(fmt.Sprintf("\n📡 Source Server   : %s\n", rec.WhoisServer))
+		}
+
+		sb.WriteString("\n⚠️ PERHATIAN:\nDomain ini telah melewati masa tenggang. Segera lakukan perpanjangan (*renew*) di registrar sebelum masuk ke siklus lelang / pendingDelete (dihapus permanen)!")
+		return sb.String()
+	}
+
+	// 2. Tampilan Khusus: HAMPIR KEDALUWARSA (H-30 atau H-7)
+	if rec.DaysRemaining <= 30 {
+		if rec.DaysRemaining <= 7 {
+			sb.WriteString(fmt.Sprintf("🚨 PERINGATAN KRITIS: DOMAIN KEDALUWARSA %d HARI LAGI! 🚨\n", rec.DaysRemaining))
+		} else {
+			sb.WriteString(fmt.Sprintf("⚠️ PERINGATAN: DOMAIN SEGERA KEDALUWARSA (%d HARI LAGI) ⚠️\n", rec.DaysRemaining))
+		}
+		sb.WriteString(fmt.Sprintf("Target: %s\n\n", rec.Domain))
+		sb.WriteString(fmt.Sprintf("🟡 Status        : PERLU PERPANJANGAN (Sisa %d hari)\n", rec.DaysRemaining))
+	} else {
+		// 3. Tampilan Normal: AKTIF
+		sb.WriteString("🌐 INFORMASI DOMAIN & WHOIS\n")
+		sb.WriteString(fmt.Sprintf("Target: %s\n\n", rec.Domain))
+		sb.WriteString("🟢 Status        : AKTIF (NORMAL)\n")
+	}
 
 	if rec.Registrar != "" {
 		sb.WriteString(fmt.Sprintf("🏢 Registrar     : %s\n", rec.Registrar))
 	} else {
 		sb.WriteString("🏢 Registrar     : -\n")
 	}
-
-	wibLoc := time.FixedZone("WIB", 7*3600)
 
 	if rec.CreatedDate != nil {
 		sb.WriteString(fmt.Sprintf("📅 Didaftarkan   : %s\n", rec.CreatedDate.In(wibLoc).Format("02 Jan 2006")))
@@ -457,21 +511,7 @@ func FormatWhoisReport(rec *monitor.WhoisRecord) string {
 	}
 	if rec.ExpiryDate != nil {
 		sb.WriteString(fmt.Sprintf("⏳ Kedaluwarsa   : %s\n", rec.ExpiryDate.In(wibLoc).Format("02 Jan 2006")))
-	}
-
-	if rec.ExpiryDate != nil {
-		if rec.IsExpired {
-			daysAgo := -rec.DaysRemaining
-			sb.WriteString(fmt.Sprintf("⏱️ Sisa Waktu    : 🔴 SUDAH KEDALUWARSA (%d hari yang lalu)\n", daysAgo))
-		} else {
-			statusUrgency := "🟢"
-			if rec.DaysRemaining <= 7 {
-				statusUrgency = "🔴 PERINGATAN KRITIS:"
-			} else if rec.DaysRemaining <= 30 {
-				statusUrgency = "🟡 PERINGATAN:"
-			}
-			sb.WriteString(fmt.Sprintf("⏱️ Sisa Waktu    : %s %d hari lagi\n", statusUrgency, rec.DaysRemaining))
-		}
+		sb.WriteString(fmt.Sprintf("⏱️ Sisa Waktu    : 🟢 %d hari lagi\n", rec.DaysRemaining))
 	}
 
 	if len(rec.DomainStatus) > 0 {
