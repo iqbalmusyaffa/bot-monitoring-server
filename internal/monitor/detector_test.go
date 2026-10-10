@@ -16,6 +16,9 @@ func TestDetectHostType(t *testing.T) {
 		{"sub.domain.co.id", HostDomain},
 		{"my-server-01.cloud.provider.net", HostDomain},
 		{"UPPERCASE.COM", HostDomain},
+		{"example.com:8080", HostDomain},
+		{"1.1.1.1:3306", HostIPv4},
+		{"[2001:db8::1]:8443", HostIPv6},
 
 		// Valid IPv4
 		{"123.123.123.123", HostIPv4},
@@ -36,7 +39,7 @@ func TestDetectHostType(t *testing.T) {
 		{"https://example.com", HostUnknown},
 		{"http://123.123.123.123", HostUnknown},
 		{"example.com/test", HostUnknown},
-		{"example.com:8080", HostUnknown},
+		{"example.com:99999", HostUnknown},
 		{"example.com?query=1", HostUnknown},
 		{"example..com", HostUnknown},
 		{"-example.com", HostUnknown},

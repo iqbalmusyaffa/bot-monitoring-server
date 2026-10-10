@@ -74,7 +74,7 @@ func TestRepository_CRUD(t *testing.T) {
 	}
 
 	// 7. Test InsertCheck & Retention Clean
-	err = repo.InsertCheck(ctx, CheckHistory{
+	err = repo.InsertCheck(ctx, monitor.DatabaseCheck{
 		HostID:     h1.ID,
 		Status:     monitor.StatusOnline,
 		CheckType:  "HTTP",
@@ -117,5 +117,85 @@ func TestRepository_CRUD(t *testing.T) {
 	_, err = repo.GetHost(ctx, "example.com")
 	if err != ErrHostNotFound {
 		t.Errorf("expected ErrHostNotFound, got %v", err)
+	}
+}
+
+func TestRepository_Uptime(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "uptime_test.db")
+	db, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewRepository(db)
+	ctx := context.Background()
+
+	h, err := repo.AddHost(ctx, "uptime.example.com", monitor.HostDomain)
+	if err != nil {
+		t.Fatalf("failed to add host: %v", err)
+	}
+
+	// Insert 9 ONLINE checks and 1 DOWN check (total 10)
+	now := time.Now()
+	for i := 0; i < 9; i++ {
+		err = repo.InsertCheck(ctx, monitor.DatabaseCheck{
+			HostID:     h.ID,
+			Status:     monitor.StatusOnline,
+			CheckType:  "HTTP",
+			HTTPStatus: 200,
+			LatencyMs:  50,
+			CheckedAt:  now.Add(-time.Duration(i) * time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("failed to insert check: %v", err)
+		}
+	}
+
+	err = repo.InsertCheck(ctx, monitor.DatabaseCheck{
+		HostID:     h.ID,
+		Status:     monitor.StatusDown,
+		CheckType:  "HTTP",
+		HTTPStatus: 500,
+		LatencyMs:  0,
+		CheckedAt:  now.Add(-10 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("failed to insert down check: %v", err)
+	}
+
+	// Query uptime for last 24h
+	stats, err := repo.GetHostUptime(ctx, h.ID, now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("GetHostUptime failed: %v", err)
+	}
+
+	if stats.TotalChecks != 10 {
+		t.Errorf("expected 10 checks, got %d", stats.TotalChecks)
+	}
+	if stats.OnlineChecks != 9 {
+		t.Errorf("expected 9 online checks, got %d", stats.OnlineChecks)
+	}
+	if stats.DownChecks != 1 {
+		t.Errorf("expected 1 down check, got %d", stats.DownChecks)
+	}
+	if stats.UptimePct != 90.0 {
+		t.Errorf("expected 90.0%% uptime, got %.2f%%", stats.UptimePct)
+	}
+	if stats.AvgLatencyMs != 50 {
+		t.Errorf("expected 50ms avg latency, got %d", stats.AvgLatencyMs)
+	}
+
+	// Test GetAllHostsUptime
+	allStats, err := repo.GetAllHostsUptime(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("GetAllHostsUptime failed: %v", err)
+	}
+	if len(allStats) != 1 {
+		t.Fatalf("expected 1 host in allStats, got %d", len(allStats))
+	}
+	if allStats[0].UptimePct != 90.0 {
+		t.Errorf("expected 90.0%% uptime in allStats, got %.2f%%", allStats[0].UptimePct)
 	}
 }

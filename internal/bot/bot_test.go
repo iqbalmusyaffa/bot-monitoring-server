@@ -37,6 +37,10 @@ func TestBotRoleManagementSuite(t *testing.T) {
 			})
 			return
 		}
+		json.NewEncoder(w).Encode(APIResponse[bool]{
+			OK:     true,
+			Result: true,
+		})
 	}))
 	defer server.Close()
 
@@ -45,6 +49,7 @@ func TestBotRoleManagementSuite(t *testing.T) {
 		AllowedUserIDs:    map[int64]bool{},
 		CommandRateLimit:  50,
 		CommandRateWindow: 1 * time.Minute,
+		MaxHosts:          50,
 	}
 	client, _ := NewClient(cfg.TelegramBotToken, server.Client())
 	client.SetBaseURL(server.URL)
@@ -123,5 +128,60 @@ func TestBotRoleManagementSuite(t *testing.T) {
 	})
 	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "Akses Ditolak") {
 		t.Errorf("expected ADMIN /adduser to be forbidden, got: %v", sentMessages)
+	}
+
+	// 8. Test /uptime overview (USER ID: 30003 is allowed)
+	sentMessages = nil
+	bot.handleMessage(ctx, &Message{
+		Chat: Chat{ID: 30003},
+		From: &User{ID: 30003},
+		Text: "/uptime",
+	})
+	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "RINGKASAN UPTIME & SLA") {
+		t.Errorf("expected /uptime summary, got: %v", sentMessages)
+	}
+
+	// 9. Test /uptime <host> 7d
+	sentMessages = nil
+	bot.handleMessage(ctx, &Message{
+		Chat: Chat{ID: 30003},
+		From: &User{ID: 30003},
+		Text: "/uptime 1.1.1.1 7d",
+	})
+	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "LAPORAN UPTIME & SLA") {
+		t.Errorf("expected /uptime 1.1.1.1 7d report, got: %v", sentMessages)
+	}
+
+	// 10. Test Interactive button click "📈 Uptime & SLA"
+	sentMessages = nil
+	bot.handleMessage(ctx, &Message{
+		Chat: Chat{ID: 30003},
+		From: &User{ID: 30003},
+		Text: "📈 Uptime & SLA",
+	})
+	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "RINGKASAN UPTIME & SLA") {
+		t.Errorf("expected button click 📈 Uptime & SLA to trigger summary, got: %v", sentMessages)
+	}
+
+	// 11. Test /whois empty argument
+	sentMessages = nil
+	bot.handleMessage(ctx, &Message{
+		Chat: Chat{ID: 30003},
+		From: &User{ID: 30003},
+		Text: "/whois",
+	})
+	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "Format penggunaan") {
+		t.Errorf("expected /whois usage instructions, got: %v", sentMessages)
+	}
+
+	// 12. Test /whois invalid target (IP)
+	sentMessages = nil
+	bot.handleMessage(ctx, &Message{
+		Chat: Chat{ID: 30003},
+		From: &User{ID: 30003},
+		Text: "/whois 123.123.123.123",
+	})
+	if len(sentMessages) == 0 || !strings.Contains(sentMessages[0], "Format domain tidak valid") {
+		t.Errorf("expected invalid domain warning, got: %v", sentMessages)
 	}
 }

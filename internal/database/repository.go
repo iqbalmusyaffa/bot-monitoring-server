@@ -467,3 +467,132 @@ func isUniqueConstraintErr(err error) bool {
 	errStr := err.Error()
 	return strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "constraint failed")
 }
+
+// HostUptimeStats contains aggregated uptime metrics over a given time window.
+type HostUptimeStats struct {
+	HostID        int64
+	Host          string
+	HostType      monitor.HostType
+	CurrentStatus monitor.OverallStatus
+	Enabled       bool
+	TotalChecks   int
+	OnlineChecks  int
+	DownChecks    int
+	AvgLatencyMs  int64
+	UptimePct     float64
+	Since         time.Time
+}
+
+// GetHostUptime calculates uptime statistics for a specific host since a given timestamp.
+func (r *Repository) GetHostUptime(ctx context.Context, hostID int64, since time.Time) (*HostUptimeStats, error) {
+	queryHost := `SELECT id, host, host_type, last_status, enabled FROM hosts WHERE id = ?;`
+	var stats HostUptimeStats
+	var hTypeStr, statusStr string
+	var enabledInt int
+	err := r.db.QueryRowContext(ctx, queryHost, hostID).Scan(&stats.HostID, &stats.Host, &hTypeStr, &statusStr, &enabledInt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrHostNotFound
+		}
+		return nil, err
+	}
+	stats.HostType = monitor.HostType(hTypeStr)
+	stats.CurrentStatus = monitor.OverallStatus(statusStr)
+	stats.Enabled = enabledInt == 1
+	stats.Since = since
+
+	queryChecks := `
+	SELECT 
+		COUNT(*),
+		COALESCE(SUM(CASE WHEN status = 'ONLINE' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN status != 'ONLINE' THEN 1 ELSE 0 END), 0),
+		COALESCE(AVG(CASE WHEN latency_ms > 0 THEN latency_ms ELSE NULL END), 0)
+	FROM checks
+	WHERE host_id = ? AND checked_at >= ?;
+	`
+	var avgLatency sql.NullFloat64
+	err = r.db.QueryRowContext(ctx, queryChecks, hostID, since).Scan(
+		&stats.TotalChecks,
+		&stats.OnlineChecks,
+		&stats.DownChecks,
+		&avgLatency,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if avgLatency.Valid {
+		stats.AvgLatencyMs = int64(avgLatency.Float64)
+	}
+
+	if stats.TotalChecks > 0 {
+		stats.UptimePct = (float64(stats.OnlineChecks) / float64(stats.TotalChecks)) * 100.0
+	} else {
+		if stats.CurrentStatus == monitor.StatusOnline {
+			stats.UptimePct = 100.0
+		} else {
+			stats.UptimePct = 0.0
+		}
+	}
+
+	return &stats, nil
+}
+
+// GetAllHostsUptime calculates uptime statistics for all active hosts since a given timestamp.
+func (r *Repository) GetAllHostsUptime(ctx context.Context, since time.Time) ([]HostUptimeStats, error) {
+	query := `
+	SELECT 
+		h.id, h.host, h.host_type, h.last_status, h.enabled,
+		COUNT(c.id) AS total_checks,
+		COALESCE(SUM(CASE WHEN c.status = 'ONLINE' THEN 1 ELSE 0 END), 0) AS online_checks,
+		COALESCE(SUM(CASE WHEN c.status != 'ONLINE' THEN 1 ELSE 0 END), 0) AS down_checks,
+		COALESCE(AVG(CASE WHEN c.latency_ms > 0 THEN c.latency_ms ELSE NULL END), 0) AS avg_latency
+	FROM hosts h
+	LEFT JOIN checks c ON h.id = c.host_id AND c.checked_at >= ?
+	WHERE h.enabled = 1
+	GROUP BY h.id, h.host, h.host_type, h.last_status, h.enabled
+	ORDER BY h.id ASC;
+	`
+	rows, err := r.db.QueryContext(ctx, query, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []HostUptimeStats
+	for rows.Next() {
+		var s HostUptimeStats
+		var hTypeStr, statusStr string
+		var enabledInt int
+		var avgLatency sql.NullFloat64
+
+		if err := rows.Scan(
+			&s.HostID, &s.Host, &hTypeStr, &statusStr, &enabledInt,
+			&s.TotalChecks, &s.OnlineChecks, &s.DownChecks, &avgLatency,
+		); err != nil {
+			return nil, err
+		}
+
+		s.HostType = monitor.HostType(hTypeStr)
+		s.CurrentStatus = monitor.OverallStatus(statusStr)
+		s.Enabled = enabledInt == 1
+		s.Since = since
+		if avgLatency.Valid {
+			s.AvgLatencyMs = int64(avgLatency.Float64)
+		}
+
+		if s.TotalChecks > 0 {
+			s.UptimePct = (float64(s.OnlineChecks) / float64(s.TotalChecks)) * 100.0
+		} else {
+			if s.CurrentStatus == monitor.StatusOnline {
+				s.UptimePct = 100.0
+			} else {
+				s.UptimePct = 0.0
+			}
+		}
+
+		result = append(result, s)
+	}
+
+	return result, rows.Err()
+}

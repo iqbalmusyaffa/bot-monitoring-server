@@ -43,8 +43,8 @@ func TestValidateAndSanitizeInput(t *testing.T) {
 			errMsgMatch: "Format target tidak valid",
 		},
 		{
-			name:        "Host with Port",
-			input:       "google.com:8080",
+			name:        "Host with Invalid Port",
+			input:       "google.com:99999",
 			wantErr:     true,
 			errMsgMatch: "Format target tidak valid",
 		},

@@ -22,6 +22,8 @@ Bot Telegram mandiri untuk memantau status ketersediaan (*availability*), *laten
 * **Resource Boundary Guard**: Batas goroutine concurrent, timeout ketat per koneksi jaringan, pembatasan body response, dan batasan redirect.
 * **Telegram User Whitelist & Rate Limiter**: Akses terbatas hanya untuk Telegram User ID yang terdaftar dengan pembatasan frekuensi perintah (*sliding-window rate limit*).
 * **Automatic History & Retention**: Menyimpan riwayat pemeriksaan ke SQLite dengan pembersihan log otomatis berkala (*retention policy*).
+* **Uptime Report & SLA Compliance**: Menghitung persentase ketersediaan (*uptime percentage*), durasi gangguan (*downtime*), rata-rata latensi, dan status evaluasi SLA (`99.9%`, `99.0%`) dalam rentang waktu harian/mingguan/bulanan (`/uptime` atau `/sla`).
+* **Pure Go WHOIS & Domain Expiry**: Mengecek masa aktif, tanggal kedaluwarsa (*expiry date*), status registrar, name server, dan status ketersediaan domain `.id` (PANDI) maupun domain luar/internasional secara langsung via TCP Port 43 tanpa butuh API eksternal (`/whois <domain>`).
 
 ---
 
@@ -157,6 +159,8 @@ go mod download
 | `/check <host>` | `/check example.com` | Semua Role | Mengecek kondisi host secara instan |
 | `/list` | `/list` | Semua Role | Menampilkan daftar seluruh host yang dimonitor |
 | `/status <host>` | `/status example.com` | Semua Role | Melihat status terakhir & riwayat di database |
+| `/uptime [host] [durasi]` | `/uptime example.com 7d` | Semua Role | Laporan persentase uptime & evaluasi SLA (24h/7d/30d) |
+| `/whois <domain>` | `/whois kompas.id` | Semua Role | Mengecek masa aktif, expired date & registrar domain |
 | `/add <host>` | `/add 123.123.123.123` | **Admin / Owner** | Menambahkan host ke monitoring otomatis |
 | `/remove <host>` | `/remove example.com` | **Admin / Owner** | Menghapus host dari daftar monitoring |
 | `/monitor <host>` | `/monitor example.com` | **Admin / Owner** | Mengaktifkan kembali monitoring host |

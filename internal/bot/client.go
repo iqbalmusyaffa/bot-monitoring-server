@@ -294,3 +294,56 @@ func (c *Client) AnswerCallbackQuery(ctx context.Context, callbackQueryID, text 
 	return nil
 }
 
+type MenuButton struct {
+	Type string `json:"type"`
+}
+
+type setChatMenuButtonPayload struct {
+	ChatID     int64       `json:"chat_id,omitempty"`
+	MenuButton *MenuButton `json:"menu_button,omitempty"`
+}
+
+// SetChatMenuButton configures the [ Menu ] button shown at the bottom-left of Telegram input box.
+func (c *Client) SetChatMenuButton(ctx context.Context, chatID int64, buttonType string) error {
+	url := fmt.Sprintf("%s/setChatMenuButton", c.apiBaseURL)
+
+	payload := setChatMenuButtonPayload{}
+	if chatID != 0 {
+		payload.ChatID = chatID
+	}
+	if buttonType != "" {
+		payload.MenuButton = &MenuButton{Type: buttonType}
+	} else {
+		payload.MenuButton = &MenuButton{Type: "commands"}
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("setChatMenuButton network error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var apiResp APIResponse[bool]
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 65536)).Decode(&apiResp); err != nil {
+		return fmt.Errorf("setChatMenuButton decode error: %w", err)
+	}
+
+	if !apiResp.OK {
+		return fmt.Errorf("telegram api error (%d): %s", apiResp.ErrorCode, apiResp.Description)
+	}
+
+	return nil
+}
+
+

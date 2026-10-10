@@ -22,6 +22,7 @@ type Bot struct {
 	auth        *Authenticator
 	rateLimiter *security.RateLimiter
 	checker     *monitor.Checker
+	whoisClient *monitor.WhoisClient
 	repo        *database.Repository
 }
 
@@ -29,12 +30,16 @@ type Bot struct {
 func NewBot(cfg *config.Config, client *Client, repo *database.Repository) *Bot {
 	var limit = 10
 	var window = 1 * time.Minute
+	var timeout = 10 * time.Second
 	if cfg != nil {
 		if cfg.CommandRateLimit > 0 {
 			limit = cfg.CommandRateLimit
 		}
 		if cfg.CommandRateWindow > 0 {
 			window = cfg.CommandRateWindow
+		}
+		if cfg.RequestTimeout > 0 {
+			timeout = cfg.RequestTimeout
 		}
 	}
 
@@ -44,6 +49,7 @@ func NewBot(cfg *config.Config, client *Client, repo *database.Repository) *Bot 
 		auth:        NewAuthenticator(cfg, repo),
 		rateLimiter: security.NewRateLimiter(limit, window),
 		checker:     monitor.NewChecker(cfg),
+		whoisClient: monitor.NewWhoisClient(timeout),
 		repo:        repo,
 	}
 }
@@ -61,6 +67,13 @@ func (b *Bot) StartLongPolling(ctx context.Context) error {
 		slog.Warn("Failed to register bot commands with Telegram", "error", err)
 	} else {
 		slog.Info("Telegram menu commands registered successfully")
+	}
+
+	// Configure [ Menu ] button pill on bottom-left of input box
+	if err := b.client.SetChatMenuButton(ctx, 0, "commands"); err != nil {
+		slog.Warn("Failed to configure chat menu button", "error", err)
+	} else {
+		slog.Info("Telegram [ Menu ] button configured successfully")
 	}
 
 	var offset int64 = 0
@@ -170,79 +183,87 @@ User ID Anda (%d) telah disimpan ke database dan memiliki akses penuh.`, senderI
 	// Command routing with role validation
 	switch cmd {
 	case "/start":
-		_ = b.client.SendMessageWithMarkup(ctx, msg.Chat.ID, StartMessage(), DefaultReplyKeyboard(role))
+		b.reply(ctx, msg.Chat.ID, StartMessage(), role)
 	case "/help":
-		_ = b.client.SendMessageWithMarkup(ctx, msg.Chat.ID, HelpMessage(), DefaultReplyKeyboard(role))
+		b.reply(ctx, msg.Chat.ID, HelpMessage(), role)
 	case "/check":
-		b.handleCheck(ctx, msg.Chat.ID, arg)
+		b.handleCheck(ctx, msg.Chat.ID, arg, role)
 	case "/list":
-		b.handleList(ctx, msg.Chat.ID)
+		b.handleList(ctx, msg.Chat.ID, role)
 	case "/status":
-		b.handleStatus(ctx, msg.Chat.ID, arg)
+		b.handleStatus(ctx, msg.Chat.ID, arg, role)
+	case "/uptime", "/sla":
+		b.handleUptime(ctx, msg.Chat.ID, arg, role)
+	case "/whois", "/domain":
+		b.handleWhois(ctx, msg.Chat.ID, arg, role)
 
 	// Admin / Owner level commands
 	case "/add":
 		if role == database.RoleUser {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner", role)
 			return
 		}
-		b.handleAdd(ctx, msg.Chat.ID, arg)
+		b.handleAdd(ctx, msg.Chat.ID, arg, role)
 	case "/remove":
 		if role == database.RoleUser {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner", role)
 			return
 		}
-		b.handleRemove(ctx, msg.Chat.ID, arg)
+		b.handleRemove(ctx, msg.Chat.ID, arg, role)
 	case "/monitor":
 		if role == database.RoleUser {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner", role)
 			return
 		}
-		b.handleSetMonitoring(ctx, msg.Chat.ID, arg, true)
+		b.handleSetMonitoring(ctx, msg.Chat.ID, arg, true, role)
 	case "/unmonitor":
 		if role == database.RoleUser {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Admin/Owner", role)
 			return
 		}
-		b.handleSetMonitoring(ctx, msg.Chat.ID, arg, false)
+		b.handleSetMonitoring(ctx, msg.Chat.ID, arg, false, role)
 
 	// Owner level commands
 	case "/adduser":
 		if role != database.RoleOwner {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Owner", role)
 			return
 		}
-		b.handleAddUser(ctx, msg.Chat.ID, arg)
+		b.handleAddUser(ctx, msg.Chat.ID, arg, role)
 	case "/removeuser":
 		if role != database.RoleOwner {
-			b.replyForbiddenRole(ctx, msg.Chat.ID, "Owner")
+			b.replyForbiddenRole(ctx, msg.Chat.ID, "Owner", role)
 			return
 		}
-		b.handleRemoveUser(ctx, msg.Chat.ID, arg)
+		b.handleRemoveUser(ctx, msg.Chat.ID, arg, role)
 	case "/listusers":
-		b.handleListUsers(ctx, msg.Chat.ID)
+		b.handleListUsers(ctx, msg.Chat.ID, role)
 
 	default:
 		response := fmt.Sprintf("Perintah '%s' tidak dikenali. Ketik /help untuk melihat menu perintah.", cmd)
-		_ = b.client.SendMessage(ctx, msg.Chat.ID, response)
+		b.reply(ctx, msg.Chat.ID, response, role)
 	}
 }
 
-func (b *Bot) replyForbiddenRole(ctx context.Context, chatID int64, requiredRole string) {
-	msg := fmt.Sprintf("⚠️ Akses Ditolak.\n\nPerintah ini hanya dapat dijalankan oleh Role **%s**.\nRole Anda saat ini memiliki izin terbatas (Read-Only / User).", requiredRole)
-	_ = b.client.SendMessage(ctx, chatID, msg)
+func (b *Bot) reply(ctx context.Context, chatID int64, text string, role database.UserRole) {
+	_ = b.client.SendMessageWithMarkup(ctx, chatID, text, DefaultReplyKeyboard(role))
 }
 
-func (b *Bot) handleCheck(ctx context.Context, chatID int64, rawTarget string) {
+func (b *Bot) replyForbiddenRole(ctx context.Context, chatID int64, requiredRole string, role database.UserRole) {
+	msg := fmt.Sprintf("⚠️ Akses Ditolak.\n\nPerintah ini hanya dapat dijalankan oleh Role **%s**.\nRole Anda saat ini memiliki izin terbatas (Read-Only / User).", requiredRole)
+	b.reply(ctx, chatID, msg, role)
+}
+
+func (b *Bot) handleCheck(ctx context.Context, chatID int64, rawTarget string, role database.UserRole) {
 	if rawTarget == "" {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/check <host>\n\nContoh:\n/check example.com\n/check 123.123.123.123\n/check 2001:db8::1")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/check <host>\n\nContoh:\n/check example.com\n/check 123.123.123.123\n/check 2001:db8::1", role)
 		return
 	}
 
 	validated, userErrMsg, err := security.ValidateAndSanitizeInput(ctx, rawTarget)
 	if err != nil {
 		slog.Warn("Rejected check input", "target", rawTarget, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, userErrMsg)
+		b.reply(ctx, chatID, userErrMsg, role)
 		return
 	}
 
@@ -251,58 +272,58 @@ func (b *Bot) handleCheck(ctx context.Context, chatID int64, rawTarget string) {
 	result := b.checker.CheckHost(ctx, validated.Normalized, validated.Type)
 	formattedResponse := monitor.FormatCheckResult(result)
 
-	_ = b.client.SendMessage(ctx, chatID, formattedResponse)
+	b.reply(ctx, chatID, formattedResponse, role)
 }
 
-func (b *Bot) handleAdd(ctx context.Context, chatID int64, rawTarget string) {
+func (b *Bot) handleAdd(ctx context.Context, chatID int64, rawTarget string, role database.UserRole) {
 	if rawTarget == "" {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/add <host>\n\nContoh:\n/add example.com\n/add 123.123.123.123\n/add 2001:db8::1")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/add <host>\n\nContoh:\n/add example.com\n/add 123.123.123.123\n/add 2001:db8::1", role)
 		return
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
 	count, err := b.repo.CountHosts(ctx)
 	if err == nil && b.cfg != nil && count >= b.cfg.MaxHosts {
 		msg := fmt.Sprintf("⚠️ Monitoring limit reached.\n\nMaximum:\n%d hosts", b.cfg.MaxHosts)
-		_ = b.client.SendMessage(ctx, chatID, msg)
+		b.reply(ctx, chatID, msg, role)
 		return
 	}
 
 	validated, userErrMsg, err := security.ValidateAndSanitizeInput(ctx, rawTarget)
 	if err != nil {
 		slog.Warn("Rejected add input", "target", rawTarget, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, userErrMsg)
+		b.reply(ctx, chatID, userErrMsg, role)
 		return
 	}
 
 	host, err := b.repo.AddHost(ctx, validated.Normalized, validated.Type)
 	if err != nil {
 		if errors.Is(err, database.ErrHostAlreadyExists) {
-			_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' sudah terdaftar di daftar monitoring.", validated.Normalized))
+			b.reply(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' sudah terdaftar di daftar monitoring.", validated.Normalized), role)
 			return
 		}
 		slog.Error("Failed to save host to database", "host", validated.Normalized, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal menambahkan host ke database.")
+		b.reply(ctx, chatID, "❌ Gagal menambahkan host ke database.", role)
 		return
 	}
 
 	slog.Info("Host added to monitoring", "host", host.Host, "type", host.HostType)
 	reply := fmt.Sprintf("✅ Berhasil menambahkan '%s' (%s) ke daftar monitoring otomatis.", host.Host, host.HostType)
-	_ = b.client.SendMessage(ctx, chatID, reply)
+	b.reply(ctx, chatID, reply, role)
 }
 
-func (b *Bot) handleRemove(ctx context.Context, chatID int64, rawTarget string) {
+func (b *Bot) handleRemove(ctx context.Context, chatID int64, rawTarget string, role database.UserRole) {
 	if rawTarget == "" {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/remove <host>\n\nContoh:\n/remove example.com")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/remove <host>\n\nContoh:\n/remove example.com", role)
 		return
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
@@ -312,28 +333,28 @@ func (b *Bot) handleRemove(ctx context.Context, chatID int64, rawTarget string) 
 	err := b.repo.RemoveHost(ctx, normalized)
 	if err != nil {
 		if errors.Is(err, database.ErrHostNotFound) {
-			_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di daftar monitoring.", normalized))
+			b.reply(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di daftar monitoring.", normalized), role)
 			return
 		}
 		slog.Error("Failed to remove host", "host", normalized, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal menghapus host.")
+		b.reply(ctx, chatID, "❌ Gagal menghapus host.", role)
 		return
 	}
 
 	slog.Info("Host removed from monitoring", "host", normalized)
-	_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("🗑️ Host '%s' berhasil dihapus dari monitoring.", normalized))
+	b.reply(ctx, chatID, fmt.Sprintf("🗑️ Host '%s' berhasil dihapus dari monitoring.", normalized), role)
 }
 
-func (b *Bot) handleList(ctx context.Context, chatID int64) {
+func (b *Bot) handleList(ctx context.Context, chatID int64, role database.UserRole) {
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
 	hosts, err := b.repo.ListHosts(ctx)
 	if err != nil {
 		slog.Error("Failed to fetch host list", "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal mengambil daftar host.")
+		b.reply(ctx, chatID, "❌ Gagal mengambil daftar host.", role)
 		return
 	}
 
@@ -343,17 +364,17 @@ func (b *Bot) handleList(ctx context.Context, chatID int64) {
 	}
 
 	formatted := FormatHostList(hosts, maxHosts)
-	_ = b.client.SendMessage(ctx, chatID, formatted)
+	b.reply(ctx, chatID, formatted, role)
 }
 
-func (b *Bot) handleStatus(ctx context.Context, chatID int64, rawTarget string) {
+func (b *Bot) handleStatus(ctx context.Context, chatID int64, rawTarget string, role database.UserRole) {
 	if rawTarget == "" {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/status <host>\n\nContoh:\n/status example.com")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/status <host>\n\nContoh:\n/status example.com", role)
 		return
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
@@ -363,30 +384,105 @@ func (b *Bot) handleStatus(ctx context.Context, chatID int64, rawTarget string) 
 	host, err := b.repo.GetHost(ctx, normalized)
 	if err != nil {
 		if errors.Is(err, database.ErrHostNotFound) {
-			_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di daftar monitoring.\n\nGunakan /add <host> untuk menambahkan.", normalized))
+			b.reply(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di daftar monitoring.\n\nGunakan /add <host> untuk menambahkan.", normalized), role)
 			return
 		}
 		slog.Error("Failed to get host status", "host", normalized, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal mengambil status host.")
+		b.reply(ctx, chatID, "❌ Gagal mengambil status host.", role)
 		return
 	}
 
-	_ = b.client.SendMessage(ctx, chatID, FormatHostDetailStatus(host))
+	b.reply(ctx, chatID, FormatHostDetailStatus(host), role)
 }
 
-func (b *Bot) handleSetMonitoring(ctx context.Context, chatID int64, rawTarget string, enabled bool) {
+func (b *Bot) handleUptime(ctx context.Context, chatID int64, arg string, role database.UserRole) {
+	if b.repo == nil {
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
+		return
+	}
+
+	targetHost, dur, durStr := ParseUptimeArgs(arg)
+	since := time.Now().Add(-dur)
+
+	if targetHost == "" {
+		// Global summary for all active hosts
+		stats, err := b.repo.GetAllHostsUptime(ctx, since)
+		if err != nil {
+			slog.Error("Failed to fetch all hosts uptime", "error", err)
+			b.reply(ctx, chatID, "❌ Gagal mengambil ringkasan uptime.", role)
+			return
+		}
+		b.reply(ctx, chatID, FormatUptimeSummary(stats, durStr), role)
+		return
+	}
+
+	// Specific host detail
+	hType := monitor.DetectHostType(targetHost)
+	normalized := monitor.NormalizeHost(targetHost, hType)
+
+	host, err := b.repo.GetHost(ctx, normalized)
+	if err != nil {
+		if errors.Is(err, database.ErrHostNotFound) {
+			b.reply(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di daftar monitoring.\n\nGunakan /add <host> untuk mendaftarkan.", normalized), role)
+			return
+		}
+		slog.Error("Failed to get host for uptime", "host", normalized, "error", err)
+		b.reply(ctx, chatID, "❌ Gagal mengambil data host.", role)
+		return
+	}
+
+	stats, err := b.repo.GetHostUptime(ctx, host.ID, since)
+	if err != nil {
+		slog.Error("Failed to calculate host uptime", "host", normalized, "error", err)
+		b.reply(ctx, chatID, "❌ Gagal menghitung uptime host.", role)
+		return
+	}
+
+	checkInterval := 1 * time.Minute
+	if b.cfg != nil && b.cfg.CheckInterval > 0 {
+		checkInterval = b.cfg.CheckInterval
+	}
+
+	b.reply(ctx, chatID, FormatHostUptimeDetail(host, stats, durStr, checkInterval), role)
+}
+
+func (b *Bot) handleWhois(ctx context.Context, chatID int64, rawTarget string, role database.UserRole) {
+	if rawTarget == "" {
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/whois <domain>\n\nContoh:\n/whois kompas.id\n/whois google.com\n/whois bca.co.id", role)
+		return
+	}
+
+	cleaned, err := monitor.CleanDomain(rawTarget)
+	if err != nil {
+		b.reply(ctx, chatID, "⚠️ Format domain tidak valid. Pastikan memasukkan nama domain (contoh: example.id atau google.com).", role)
+		return
+	}
+
+	_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("🔍 Memeriksa data WHOIS untuk '%s'...", cleaned))
+
+	rec, err := b.whoisClient.Lookup(ctx, cleaned)
+	if err != nil {
+		slog.Error("Failed to lookup whois", "domain", cleaned, "error", err)
+		b.reply(ctx, chatID, fmt.Sprintf("❌ Gagal memeriksa WHOIS untuk '%s':\n%v", cleaned, err), role)
+		return
+	}
+
+	b.reply(ctx, chatID, FormatWhoisReport(rec), role)
+}
+
+func (b *Bot) handleSetMonitoring(ctx context.Context, chatID int64, rawTarget string, enabled bool, role database.UserRole) {
 	cmdName := "/monitor"
 	if !enabled {
 		cmdName = "/unmonitor"
 	}
 
 	if rawTarget == "" {
-		_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("ℹ️ Format penggunaan:\n%s <host>\n\nContoh:\n%s example.com", cmdName, cmdName))
+		b.reply(ctx, chatID, fmt.Sprintf("ℹ️ Format penggunaan:\n%s <host>\n\nContoh:\n%s example.com", cmdName, cmdName), role)
 		return
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
@@ -396,100 +492,100 @@ func (b *Bot) handleSetMonitoring(ctx context.Context, chatID int64, rawTarget s
 	err := b.repo.SetHostEnabled(ctx, normalized, enabled)
 	if err != nil {
 		if errors.Is(err, database.ErrHostNotFound) {
-			_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di database.", normalized))
+			b.reply(ctx, chatID, fmt.Sprintf("⚠️ Host '%s' tidak ditemukan di database.", normalized), role)
 			return
 		}
 		slog.Error("Failed to update host monitoring state", "host", normalized, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal mengubah status monitoring.")
+		b.reply(ctx, chatID, "❌ Gagal mengubah status monitoring.", role)
 		return
 	}
 
 	if enabled {
-		_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("🟢 Monitoring otomatis untuk '%s' telah diaktifkan kembali.", normalized))
+		b.reply(ctx, chatID, fmt.Sprintf("🟢 Monitoring otomatis untuk '%s' telah diaktifkan kembali.", normalized), role)
 	} else {
-		_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("⏸️ Monitoring otomatis untuk '%s' dijeda.", normalized))
+		b.reply(ctx, chatID, fmt.Sprintf("⏸️ Monitoring otomatis untuk '%s' dijeda.", normalized), role)
 	}
 }
 
-func (b *Bot) handleAddUser(ctx context.Context, chatID int64, rawArgs string) {
+func (b *Bot) handleAddUser(ctx context.Context, chatID int64, rawArgs string, role database.UserRole) {
 	parts := strings.Fields(rawArgs)
 	if len(parts) == 0 {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/adduser <telegram_user_id> [admin/user]\n\nContoh:\n/adduser 987654321 admin\n/adduser 112233445 user")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/adduser <telegram_user_id> [admin/user]\n\nContoh:\n/adduser 987654321 admin\n/adduser 112233445 user", role)
 		return
 	}
 
 	newID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || newID <= 0 {
-		_ = b.client.SendMessage(ctx, chatID, "❌ User ID harus berupa angka positif.")
+		b.reply(ctx, chatID, "❌ User ID harus berupa angka positif.", role)
 		return
 	}
 
-	role := database.RoleUser
+	targetRole := database.RoleUser
 	if len(parts) > 1 && strings.EqualFold(parts[1], "admin") {
-		role = database.RoleAdmin
+		targetRole = database.RoleAdmin
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
-	err = b.repo.AddAdminUser(ctx, newID, "User", "", false, role)
+	err = b.repo.AddAdminUser(ctx, newID, "User", "", false, targetRole)
 	if err != nil {
-		slog.Error("Failed to add user", "user_id", newID, "role", role, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal mendaftarkan user.")
+		slog.Error("Failed to add user", "user_id", newID, "role", targetRole, "error", err)
+		b.reply(ctx, chatID, "❌ Gagal mendaftarkan user.", role)
 		return
 	}
 
 	roleEmoji := "👤 USER (Viewer / Read-Only)"
-	if role == database.RoleAdmin {
+	if targetRole == database.RoleAdmin {
 		roleEmoji = "🛡️ ADMIN (Full Access)"
 	}
 
-	_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("✅ User ID %d berhasil didaftarkan dengan role %s.", newID, roleEmoji))
+	b.reply(ctx, chatID, fmt.Sprintf("✅ User ID %d berhasil didaftarkan dengan role %s.", newID, roleEmoji), role)
 }
 
-func (b *Bot) handleRemoveUser(ctx context.Context, chatID int64, rawUserID string) {
+func (b *Bot) handleRemoveUser(ctx context.Context, chatID int64, rawUserID string, role database.UserRole) {
 	if rawUserID == "" {
-		_ = b.client.SendMessage(ctx, chatID, "ℹ️ Format penggunaan:\n/removeuser <telegram_user_id>\n\nContoh:\n/removeuser 987654321")
+		b.reply(ctx, chatID, "ℹ️ Format penggunaan:\n/removeuser <telegram_user_id>\n\nContoh:\n/removeuser 987654321", role)
 		return
 	}
 
 	targetID, err := strconv.ParseInt(rawUserID, 10, 64)
 	if err != nil || targetID <= 0 {
-		_ = b.client.SendMessage(ctx, chatID, "❌ User ID harus berupa angka positif.")
+		b.reply(ctx, chatID, "❌ User ID harus berupa angka positif.", role)
 		return
 	}
 
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
 	err = b.repo.RemoveAdminUser(ctx, targetID)
 	if err != nil {
 		if errors.Is(err, database.ErrUserNotFound) {
-			_ = b.client.SendMessage(ctx, chatID, "⚠️ User tidak ditemukan atau merupakan Owner (Owner tidak dapat dihapus).")
+			b.reply(ctx, chatID, "⚠️ User tidak ditemukan atau merupakan Owner (Owner tidak dapat dihapus).", role)
 			return
 		}
 		slog.Error("Failed to remove admin user", "user_id", targetID, "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal mencabut akses user.")
+		b.reply(ctx, chatID, "❌ Gagal mencabut akses user.", role)
 		return
 	}
 
-	_ = b.client.SendMessage(ctx, chatID, fmt.Sprintf("🗑️ Akses untuk User ID %d berhasil dicabut.", targetID))
+	b.reply(ctx, chatID, fmt.Sprintf("🗑️ Akses untuk User ID %d berhasil dicabut.", targetID), role)
 }
 
-func (b *Bot) handleListUsers(ctx context.Context, chatID int64) {
+func (b *Bot) handleListUsers(ctx context.Context, chatID int64, role database.UserRole) {
 	if b.repo == nil {
-		_ = b.client.SendMessage(ctx, chatID, "❌ Database belum siap.")
+		b.reply(ctx, chatID, "❌ Database belum siap.", role)
 		return
 	}
 
 	users, err := b.repo.ListAdminUsers(ctx)
 	if err != nil {
 		slog.Error("Failed to list admin users", "error", err)
-		_ = b.client.SendMessage(ctx, chatID, "❌ Gagal memuat daftar admin.")
+		b.reply(ctx, chatID, "❌ Gagal memuat daftar admin.", role)
 		return
 	}
 
@@ -499,5 +595,5 @@ func (b *Bot) handleListUsers(ctx context.Context, chatID int64) {
 	}
 
 	formatted := FormatUserList(users, envIDs)
-	_ = b.client.SendMessage(ctx, chatID, formatted)
+	b.reply(ctx, chatID, formatted, role)
 }
