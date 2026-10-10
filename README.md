@@ -148,30 +148,113 @@ go mod download
 
 ---
 
-## 💬 9. Commands & Roles
+## 💬 9. Commands & Interactive Keyboard
+
+Bot dilengkapi dengan papan tombol interaktif (*Persistent Reply Keyboard*) dan tombol **[ Menu ]** otomatis bawaan Telegram (`setChatMenuButton`), sehingga pengguna dapat mengeklik tombol menu langsung tanpa perlu mengetik garis miring `/`:
+
+```text
++-----------------------+-----------------------+
+|    📋 Daftar Host     |    📈 Uptime & SLA    |
++-----------------------+-----------------------+
+|    ⚡ Cek Cepat       |    🌐 Cek WHOIS       |
++-----------------------+-----------------------+
+|    ➕ Tambah Host     |    📊 Status Host     |
++-----------------------+-----------------------+
+|    👥 Kelola User     |    ❓ Panduan         |
++-----------------------+-----------------------+
+```
+*(Catatan: Tombol `➕ Tambah Host` dan `👥 Kelola User` disesuaikan otomatis dengan hak akses Role Anda. Tombol keyboard ini dapat disembunyikan/dimunculkan kapan saja lewat ikon `[::]` di samping emoticon Telegram).*
 
 ### 👑 Daftar Perintah Berdasarkan Role:
 
 | Perintah | Contoh | Hak Akses | Deskripsi |
 | :--- | :--- | :--- | :--- |
-| `/start` | `/start` | Semua Role | Menampilkan menu dan bantuan |
-| `/help` | `/help` | Semua Role | Menampilkan panduan lengkap |
-| `/check <host>` | `/check example.com` | Semua Role | Mengecek kondisi host secara instan |
-| `/list` | `/list` | Semua Role | Menampilkan daftar seluruh host yang dimonitor |
-| `/status <host>` | `/status example.com` | Semua Role | Melihat status terakhir & riwayat di database |
-| `/uptime [host] [durasi]` | `/uptime example.com 7d` | Semua Role | Laporan persentase uptime & evaluasi SLA (24h/7d/30d) |
-| `/whois <domain>` | `/whois kompas.id` | Semua Role | Mengecek masa aktif, expired date & registrar domain |
-| `/add <host>` | `/add 123.123.123.123` | **Admin / Owner** | Menambahkan host ke monitoring otomatis |
-| `/remove <host>` | `/remove example.com` | **Admin / Owner** | Menghapus host dari daftar monitoring |
-| `/monitor <host>` | `/monitor example.com` | **Admin / Owner** | Mengaktifkan kembali monitoring host |
-| `/unmonitor <host>`| `/unmonitor example.com` | **Admin / Owner** | Menjeda monitoring otomatis untuk host |
-| `/listusers` | `/listusers` | **Owner Only** | Melihat seluruh daftar user dan rolenya |
-| `/adduser <id> [role]` | `/adduser 987654321 user` | **Owner Only** | Mendaftarkan user baru dengan role `admin` / `user` |
-| `/removeuser <id>` | `/removeuser 987654321` | **Owner Only** | Mencabut akses user |
+| `/start` | `/start` | Semua Role | Menampilkan menu utama & memunculkan papan tombol interaktif |
+| `/help` | `/help` | Semua Role | Menampilkan panduan penggunaan lengkap |
+| `/check <host>` | `/check example.com` | Semua Role | Mengecek kondisi host secara instan (DNS, HTTP/S, Port, Latency) |
+| `/list` | `/list` | Semua Role | Menampilkan daftar seluruh host yang sedang dimonitor |
+| `/status <host>` | `/status example.com` | Semua Role | Melihat status terakhir, response time & riwayat di database |
+| `/uptime [host] [durasi]` | `/uptime` atau `/uptime example.com 7d` | Semua Role | Laporan persentase uptime & evaluasi SLA (`24h`, `7d`, `30d`) |
+| `/whois <domain>` | `/whois kompas.id` atau `/whois google.com` | Semua Role | Cek masa aktif, tanggal expired, registrar & status domain |
+| `/add <host>` | `/add 123.123.123.123` atau `/add site.com:8080` | **Admin / Owner** | Menambahkan target baru ke monitoring berkala otomatis |
+| `/remove <host>` | `/remove example.com` | **Admin / Owner** | Menghapus target dari daftar monitoring otomatis |
+| `/monitor <host>` | `/monitor example.com` | **Admin / Owner** | Mengaktifkan kembali monitoring otomatis untuk target yang dijeda |
+| `/unmonitor <host>`| `/unmonitor example.com` | **Admin / Owner** | Menjeda (*pause*) monitoring otomatis untuk target |
+| `/listusers` | `/listusers` | **Owner Only** | Melihat seluruh daftar pengguna terdaftar beserta rolenya |
+| `/adduser <id> [role]` | `/adduser 987654321 admin` | **Owner Only** | Mendaftarkan pengguna baru dengan hak akses `admin` atau `user` |
+| `/removeuser <id>` | `/removeuser 987654321` | **Owner Only** | Mencabut akses pengguna terdaftar |
 
 ---
 
-## 💻 10. Local Development
+## 📊 10. Showcase Fitur Unggulan
+
+### 📈 A. Laporan Uptime & Evaluasi SLA (`/uptime` atau `/sla`)
+Menghitung persentase ketersediaan (*availability percentage*) host dari database SQLite dalam kurun waktu tertentu:
+* **Sintaks**:
+  * `/uptime` : Ringkasan performa seluruh host aktif dalam 24 jam terakhir.
+  * `/uptime 7d` : Ringkasan seluruh host dalam 7 hari terakhir (mendukung `24h`, `48h`, `7d`, `14d`, `30d`).
+  * `/uptime <host> [durasi]` : Laporan komprehensif untuk satu host tertentu (misal: `/uptime example.com 7d`).
+* **Standar Evaluasi SLA (Tiering)**:
+  * `✅ PASSED (Tier 99.9%)` : Uptime $\ge 99.9\%$ (Standar ketersediaan tinggi / *high availability*).
+  * `⚠️ WARNING (Tier 99.0%)` : Uptime antara $99.0\% - 99.89\%$ (Terjadi beberapa insiden *downtime*).
+  * `❌ BREACHED (< 99.0%)` : Uptime $< 99.0\%$ (Pelanggaran batas toleransi gangguan).
+
+```text
+Contoh Output Detail (/uptime example.com 7d):
+-------------------------------------------------
+📈 LAPORAN UPTIME & SLA (7 Hari Terakhir)
+Target: example.com (DOMAIN)
+
+Status Terkini: 🟢 ONLINE
+
+⏱️ Uptime: 99.92%
+🎯 Status SLA: ✅ PASSED (Tier 99.9%)
+⚡ Rata-rata Latensi: 38 ms
+🔄 Total Pemeriksaan: 10,080 kali
+✅ Sukses (ONLINE): 10,072 kali
+📉 Gangguan (DOWN): 8 kali (~8m0s)
+
+Terakhir Dicek: 10 Okt 2026 15:00:00 WIB
+Terakhir Online: 10 Okt 2026 15:00:00 WIB
+```
+
+---
+
+### 🌐 B. Cek WHOIS & Masa Aktif Domain (`/whois` atau `/domain`)
+Pengecekan tanggal kedaluwarsa registrasi domain tanpa API berbayar (100% Pure Go TCP Port 43):
+* **Cakupan Luas**: Otomatis mengenali domain Indonesia ccTLD `.id` (termasuk `.co.id`, `.web.id`, `.my.id`, dll. via PANDI) serta gTLD internasional (`.com`, `.net`, `.org`, `.io`, `.xyz`, dll.).
+* **4 Mode Tampilan Cerdas**:
+  1. `🟢 AKTIF (NORMAL)` : Domain aktif dengan sisa waktu aman ($> 30$ hari).
+  2. `🟡 PERINGATAN (H-30)` : Mengingatkan pemilik bahwa domain akan habis dalam $< 30$ hari.
+  3. `🚨 KRITIS (H-7)` : Peringatan darurat bahwa domain akan habis dalam $\le 7$ hari.
+  4. `🚨 KEDALUWARSA (EXPIRED)` : Tampilan merah tegas dengan instruksi perpanjangan darurat sebelum masuk masa *Pending Delete*.
+  5. `🟢 TERSEDIA (AVAILABLE)` : Memberi tahu bahwa domain belum didaftarkan dan dapat dibeli.
+
+```text
+Contoh Output Domain Kedaluwarsa (/whois expired-site.id):
+-----------------------------------------------------------
+🚨 STATUS: DOMAIN SUDAH KEDALUWARSA (EXPIRED) 🚨
+Target: expired-site.id
+
+🔴 Kondisi         : ❌ MATI / KEDALUWARSA
+⏳ Tanggal Expired : 15 Sep 2026 07:00 WIB
+⏱️ Telah Lewat     : 25 hari yang lalu
+
+🏢 Registrar       : PT Rumahweb Indonesia
+📅 Awal Terdaftar  : 15 Sep 2021
+🔒 Status EPP      : redemptionPeriod, pendingDelete
+
+🌐 Name Servers:
+   • ns1.expired-site.id
+   • ns2.expired-site.id
+
+⚠️ PERHATIAN:
+Domain ini telah melewati masa tenggang. Segera lakukan perpanjangan (renew) sebelum masuk ke siklus lelang / pendingDelete!
+```
+
+---
+
+## 💻 11. Local Development
 1. Salin konfigurasi:
    ```bash
    cp .env.example .env
@@ -187,7 +270,7 @@ go mod download
 
 ---
 
-## 🧪 11. Testing
+## 🧪 12. Testing
 Jalankan seluruh test suite unit & integration:
 ```bash
 go test -v ./...
@@ -202,7 +285,7 @@ go test -v ./internal/bot/...
 
 ---
 
-## 🐧 12. Panduan Lengkap Deployment di VPS Ubuntu (1 vCPU, 1 GB RAM)
+## 🐧 13. Panduan Lengkap Deployment di VPS Ubuntu (1 vCPU, 1 GB RAM)
 
 ### 📋 Supported Operating Systems:
 | OS / Distro | Versi | Status |
@@ -293,7 +376,98 @@ Jika Anda tidak ingin menginstall Go di VPS:
 
 ---
 
-## ⚙️ 13. Systemd Service
+## 🔄 14. Cara Update & Redeploy Versi Terbaru di VPS
+
+Saat ada pembaruan kode baru dari GitHub, ikuti langkah berikut untuk mengupdate bot di VPS tanpa kehilangan data konfigurasi maupun histori database:
+
+### Opsi A: Update Langsung via Git di VPS (Paling Praktis)
+```bash
+# 1. Masuk ke direktori git repository
+cd ~/bot-monitoring-server
+
+# 2. Reset perubahan lokal & tarik update terbaru dari GitHub
+git reset --hard HEAD
+rm -f go.sum
+git pull
+
+# 3. Compile ulang binary terbaru
+go build -ldflags="-s -w" -o host-monitor cmd/bot/main.go
+
+# 4. Hentikan service sebentar (wajib agar tidak error 'Text file busy')
+sudo systemctl stop host-monitor
+
+# 5. Salin binary baru & atur hak akses
+sudo cp host-monitor /opt/host-monitor/host-monitor
+sudo chown hostmonitor:hostmonitor /opt/host-monitor/host-monitor
+sudo chmod 755 /opt/host-monitor/host-monitor
+
+# 6. Jalankan kembali service bot
+sudo systemctl start host-monitor
+
+# 7. Pastikan status bot berjalan normal
+sudo systemctl status host-monitor
+```
+
+### Opsi B: Build dari Laptop Windows & Upload via SCP
+```powershell
+# 1. Di PowerShell Laptop:
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"; go build -ldflags="-s -w" -o host-monitor ./cmd/bot/main.go
+scp host-monitor root@IP_VPS:/opt/host-monitor/host-monitor-new
+
+# 2. Di Terminal VPS:
+sudo systemctl stop host-monitor
+sudo mv /opt/host-monitor/host-monitor-new /opt/host-monitor/host-monitor
+sudo chown hostmonitor:hostmonitor /opt/host-monitor/host-monitor
+sudo chmod 755 /opt/host-monitor/host-monitor
+sudo systemctl start host-monitor
+sudo systemctl status host-monitor
+```
+
+---
+
+## 📋 15. Pemeliharaan, Monitoring Log & Backup Database
+
+### 🔍 Melihat Log Bot (`journalctl`):
+* **Live Streaming Log Realtime (Follow):**
+  ```bash
+  sudo journalctl -u host-monitor -f
+  ```
+  *(Tekan `Ctrl + C` untuk keluar dari log)*.
+
+* **Melihat 50 baris log terakhir:**
+  ```bash
+  sudo journalctl -u host-monitor -n 50 --no-pager
+  ```
+
+* **Melihat log sejak restart terakhir:**
+  ```bash
+  sudo journalctl -u host-monitor -b --no-pager
+  ```
+
+* **Filter log hanya yang berisi error:**
+  ```bash
+  sudo journalctl -u host-monitor -p err --no-pager
+  ```
+
+### 💾 Backup & Restore Database SQLite:
+File database SQLite terletak di `/opt/host-monitor/data/monitor.db`.
+
+* **Backup Database Aman:**
+  ```bash
+  sudo cp /opt/host-monitor/data/monitor.db /opt/host-monitor/data/monitor_backup_$(date +%F).db
+  ```
+* **Restore Database:**
+  ```bash
+  sudo systemctl stop host-monitor
+  sudo cp /path/to/backup.db /opt/host-monitor/data/monitor.db
+  sudo chown hostmonitor:hostmonitor /opt/host-monitor/data/monitor.db
+  sudo chmod 600 /opt/host-monitor/data/monitor.db
+  sudo systemctl start host-monitor
+  ```
+
+---
+
+## ⚙️ 16. Systemd Service
 
 Salin unit file hardening ke systemd:
 ```bash
@@ -302,15 +476,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now host-monitor
 ```
 
-Cek status service:
+Perintah manajemen service:
 ```bash
-sudo systemctl status host-monitor
+sudo systemctl start host-monitor     # Menjalankan bot
+sudo systemctl stop host-monitor      # Menghentikan bot
+sudo systemctl restart host-monitor   # Merestart bot
+sudo systemctl status host-monitor    # Cek status bot
 ```
 
 ---
 
-## 🔥 14. Firewall (UFW)
-Aplikasi menggunakan **Telegram Long Polling** (outbound HTTPS), sehingga **TIDAK MEMERLUKAN** port inbound terbuka:
+## 🔥 17. Firewall (UFW)
+Aplikasi menggunakan **Telegram Long Polling** (outbound HTTPS ke api.telegram.org) dan TCP probe outbound, sehingga **TIDAK MEMERLUKAN** port inbound terbuka:
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
@@ -320,26 +497,33 @@ sudo ufw enable
 
 ---
 
-## 🔍 15. Troubleshooting
-* **Bot tidak merespons pesan Telegram**:
-  - Periksa apakah `TELEGRAM_BOT_TOKEN` valid.
-  - Periksa apakah User ID pengirim sudah didaftarkan pada `ALLOWED_TELEGRAM_USER_IDS`.
+## 🔍 18. Troubleshooting
+* **Error `Text file busy` saat copy binary:**
+  - Terjadi karena file binary lama sedang dieksekusi oleh service. Hentikan service terlebih dahulu: `sudo systemctl stop host-monitor`, lalu ulangi copy.
+* **Error `Your local changes would be overwritten by merge` saat git pull:**
+  - Bersihkan modifikasi file lokal sementara di VPS: `git reset --hard HEAD && rm -f go.sum && git pull`.
+* **Tombol Menu tidak muncul di Telegram Desktop:**
+  - Ketik `/start` sekali di chat bot. Jika keyboard sempat tertutup, klik ikon 4 kotak kecil `[::]` di pojok kanan kolom input (sebelah kiri emoticon 😊) untuk membukanya kembali.
+* **Bot tidak merespons pesan Telegram:**
+  - Periksa apakah `TELEGRAM_BOT_TOKEN` valid di file `.env`.
+  - Periksa apakah User ID pengirim sudah terdaftar di database via `/listusers` atau `.env`.
   - Cek log aplikasi: `sudo journalctl -u host-monitor -f`.
-* **Database error / Permission denied**:
-  - Pastikan folder `/opt/host-monitor/data` dimiliki oleh user `hostmonitor`: `sudo chown -R hostmonitor:hostmonitor /opt/host-monitor/data`.
-* **Koneksi target timeout**:
+* **Database error / Permission denied:**
+  - Pastikan kepemilikan direktori data sudah benar: `sudo chown -R hostmonitor:hostmonitor /opt/host-monitor/data`.
+* **Koneksi target timeout:**
   - Periksa apakah server target memblokir IP VPS Anda atau port target tertutup firewall eksternal.
 
 ---
 
-## 🔒 16. Security Considerations
+## 🔒 19. Security Considerations
 * **Secret Protection**: Token bot tidak pernah dicatat di log aplikasi (*never logged*).
-* **Zero Shell Execution**: Menghilangkan celah *Remote Code Execution* (RCE).
+* **Zero Shell Execution**: 100% Go native socket & HTTP library, menghilangkan celah *Remote Code Execution* (RCE).
 * **Isolation**: Pembatasan hak akses file SQLite (`chmod 600`) dan direktori data (`chmod 700`).
+* **Non-Root Sandboxing**: Systemd hardening dengan `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`.
 
 ---
 
-## 📊 17. Resource Requirements
+## 📊 20. Resource Requirements
 * **CPU**: 1 vCPU (< 2% CPU usage saat idle & monitoring cycle).
 * **RAM**: 1 GB RAM (Alokasi memory aplikasi ~15 - 25 MB RAM).
 * **Storage**: < 50 MB disk space untuk binary dan SQLite database.
